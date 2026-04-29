@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>∇ EdgeVec — Vector Gradient Edge Detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #07080d;
+    --surface: #0f1018;
+    --panel: #13151f;
+    --border: #1e2235;
+    --accent: #6ef7c8;
+    --accent2: #f76e6e;
+    --accent3: #6e9ef7;
+    --accent4: #f7d36e;
+    --text: #e8eaf0;
+    --muted: #6b7280;
+    --glow: 0 0 24px rgba(110,247,200,0.18);
+    --font-mono: 'Space Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── NOISE TEXTURE ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0;
+  }
+
+  /* ── HEADER ── */
+  header {
+    position: relative; z-index: 10;
+    padding: 2rem 3rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 1.5rem;
+  }
+  .logo-mark {
+    width: 48px; height: 48px;
+    border: 2px solid var(--accent);
+    border-radius: 12px;
+    display: grid; place-items: center;
+    font-size: 1.5rem;
+    box-shadow: var(--glow);
+  }
+  .logo-text h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
+  .logo-text h1 span { color: var(--accent); }
+  .logo-text p { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+  .header-badge {
+    margin-left: auto;
+    font-family: var(--font-mono); font-size: 0.65rem;
+    padding: 6px 12px; border-radius: 20px;
+    background: rgba(110,247,200,0.08);
+    border: 1px solid rgba(110,247,200,0.25);
+    color: var(--accent);
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .app { position: relative; z-index: 1; display: grid; grid-template-columns: 340px 1fr; min-height: calc(100vh - 90px); }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 1.5rem;
+    display: flex; flex-direction: column; gap: 1.5rem;
+    overflow-y: auto;
+  }
+  .section-label {
+    font-family: var(--font-mono); font-size: 0.65rem; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 0.75rem;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-label::before { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* Upload Zone */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(110,247,200,0.04); }
+  .upload-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .upload-zone p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+  .upload-zone strong { color: var(--accent); font-family: var(--font-mono); }
+
+  /* Method selector */
+  .method-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .method-btn {
+    padding: 10px 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    font-family: var(--font-mono); font-size: 0.7rem;
+    cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .method-btn.active { border-color: var(--accent); background: rgba(110,247,200,0.1); color: var(--accent); }
+  .method-btn:hover:not(.active) { border-color: #333; color: var(--text); }
+  .method-name { font-weight: 700; display: block; }
+  .method-desc { font-size: 0.6rem; margin-top: 2px; opacity: 0.7; }
+
+  /* Slider */
+  .slider-group { display: flex; flex-direction: column; gap: 8px; }
+  .slider-row { display: flex; justify-content: space-between; align-items: center; }
+  .slider-name { font-size: 0.8rem; color: var(--text); }
+  .slider-val { font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent); }
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100%; height: 4px; border-radius: 2px;
+    background: var(--border); outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    box-shadow: 0 0 8px rgba(110,247,200,0.5);
+  }
+
+  /* Toggle */
+  .toggle-row { display: flex; justify-content: space-between; align-items: center; }
+  .toggle-label { font-size: 0.82rem; color: var(--text); }
+  .toggle { position: relative; width: 36px; height: 20px; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; inset: 0; border-radius: 20px;
+    background: var(--border); cursor: pointer; transition: 0.2s;
+  }
+  .toggle-slider::after {
+    content: ''; position: absolute;
+    top: 3px; left: 3px; width: 14px; height: 14px;
+    background: var(--muted); border-radius: 50%; transition: 0.2s;
+  }
+  .toggle input:checked + .toggle-slider { background: rgba(110,247,200,0.3); border: 1px solid var(--accent); }
+  .toggle input:checked + .toggle-slider::after { transform: translateX(16px); background: var(--accent); }
+
+  /* Process Button */
+  .process-btn {
+    width: 100%; padding: 14px;
+    border-radius: 10px;
+    border: none;
+    background: linear-gradient(135deg, var(--accent) 0%, #3dd9a4 100%);
+    color: #07080d;
+    font-family: var(--font-display); font-size: 0.95rem; font-weight: 800;
+    cursor: pointer; transition: all 0.2s;
+    letter-spacing: 0.03em;
+  }
+  .process-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(110,247,200,0.3); }
+  .process-btn:active { transform: translateY(0); }
+  .process-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .demo-btn {
+    width: 100%; padding: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-mono); font-size: 0.72rem;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .demo-btn:hover { border-color: var(--accent3); color: var(--accent3); }
+
+  /* Stats panel */
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px;
+  }
+  .stat-val { font-family: var(--font-mono); font-size: 0.9rem; color: var(--accent); font-weight: 700; }
+  .stat-name { font-size: 0.62rem; color: var(--muted); margin-top: 2px; line-height: 1.3; }
+
+  /* ── MAIN CONTENT ── */
+  .main { padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.5rem; }
+
+  /* Math formula banner */
+  .formula-banner {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 1rem 1.5rem;
+    display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: center;
+  }
+  .formula { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text); }
+  .formula strong { color: var(--accent); }
+  .formula em { color: var(--accent4); font-style: normal; }
+
+  /* Results grid */
+  .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+  .result-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .result-card:hover { border-color: rgba(110,247,200,0.3); }
+  .card-header {
+    padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text); font-weight: 700; }
+  .card-formula { font-family: var(--font-mono); font-size: 0.62rem; color: var(--accent); }
+  .card-body { position: relative; aspect-ratio: 1; background: #000; }
+  .card-body img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .card-footer { padding: 8px 14px; font-family: var(--font-mono); font-size: 0.62rem; color: var(--muted); }
+
+  /* Placeholder */
+  .placeholder {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 400px; gap: 1rem; color: var(--muted); text-align: center;
+  }
+  .placeholder .big { font-size: 4rem; opacity: 0.2; }
+  .placeholder p { font-size: 0.9rem; max-width: 320px; line-height: 1.6; }
+
+  /* Loading */
+  .loading {
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 400px; gap: 1rem; color: var(--accent);
+  }
+  .loading.show { display: flex; }
+  .spinner {
+    width: 48px; height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading p { font-family: var(--font-mono); font-size: 0.8rem; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 2rem; right: 2rem;
+    background: var(--accent2); color: white;
+    padding: 12px 20px; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 0.8rem;
+    transform: translateY(100px); opacity: 0; transition: all 0.3s;
+    z-index: 999;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Animation on card appear */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .result-card { animation: fadeUp 0.35s ease both; }
+  .result-card:nth-child(2) { animation-delay: 0.05s; }
+  .result-card:nth-child(3) { animation-delay: 0.1s; }
+  .result-card:nth-child(4) { animation-delay: 0.15s; }
+  .result-card:nth-child(5) { animation-delay: 0.2s; }
+  .result-card:nth-child(6) { animation-delay: 0.25s; }
+  .result-card:nth-child(7) { animation-delay: 0.3s; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">∇</div>
+  <div class="logo-text">
+    <h1>Edge<span>Vec</span></h1>
+    <p>IMAGE EDGE DETECTION · VECTOR CALCULUS · 4TH SEM PROJECT</p>
+  </div>
+  <div class="header-badge">∇f = (∂f/∂x, ∂f/∂y)</div>
+</header>
+
+<div class="app">
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+
+    <div>
+      <div class="section-label">Input Image</div>
+      <div class="upload-zone" id="dropzone">
+        <input type="file" id="fileInput" accept="image/*"/>
+        <div class="upload-icon">🖼️</div>
+        <p><strong>Drop image here</strong><br/>or click to browse<br/><span style="font-size:0.72rem">PNG, JPG, JPEG, BMP</span></p>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Gradient Method</div>
+      <div class="method-grid">
+        <button class="method-btn active" data-method="sobel">
+          <span class="method-name">Sobel</span>
+          <span class="method-desc">3×3 weighted ∂f/∂x ∂f/∂y</span>
+        </button>
+        <button class="method-btn" data-method="prewitt">
+          <span class="method-name">Prewitt</span>
+          <span class="method-desc">Uniform gradient kernel</span>
+        </button>
+        <button class="method-btn" data-method="roberts">
+          <span class="method-name">Roberts</span>
+          <span class="method-desc">Diagonal 2×2 cross</span>
+        </button>
+        <button class="method-btn" data-method="laplacian" id="lapBtn">
+          <span class="method-name">Laplacian</span>
+          <span class="method-desc">∇²f = 2nd derivative</span>
+        </button>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Parameters</div>
+      <div class="slider-group">
+        <div>
+          <div class="slider-row">
+            <span class="slider-name">Edge Threshold</span>
+            <span class="slider-val" id="threshVal">80%</span>
+          </div>
+          <input type="range" id="threshold" min="50" max="99" value="80"/>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--muted);margin-top:4px;">
+            Higher → fewer, stronger edges
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="section-label">Options</div>
+      <div class="toggle-row">
+        <span class="toggle-label">Show Laplacian ∇²f</span>
+        <label class="toggle">
+          <input type="checkbox" id="showLap"/>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <button class="process-btn" id="processBtn" disabled>
+        ∇ Compute Gradient Field
+      </button>
+      <button class="demo-btn" id="demoBtn">
+        Use Demo Image
+      </button>
+    </div>
+
+    <!-- Stats -->
+    <div id="statsSection" style="display:none">
+      <div class="section-label">Vector Statistics</div>
+      <div class="stats-grid" id="statsGrid"></div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <div class="formula-banner">
+      <div class="formula">
+        <strong>Gradient:</strong> <em>∇I = (∂I/∂x, ∂I/∂y)</em>
+      </div>
+      <div class="formula">
+        <strong>Magnitude:</strong> <em>|∇I| = √(Gx² + Gy²)</em>
+      </div>
+      <div class="formula">
+        <strong>Direction:</strong> <em>θ = arctan(Gy / Gx)</em>
+      </div>
+      <div class="formula">
+        <strong>Laplacian:</strong> <em>∇²I = ∂²I/∂x² + ∂²I/∂y²</em>
+      </div>
+    </div>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Computing gradient vector field...</p>
+    </div>
+
+    <div id="placeholder" class="placeholder">
+      <div class="big">∇</div>
+      <p>Upload an image and click <strong>Compute Gradient Field</strong> to detect edges using vector calculus operators.</p>
+      <p style="font-size:0.78rem;color:#444">The gradient ∇f captures the direction of greatest intensity change — which is exactly where edges live.</p>
+    </div>
+
+    <div id="results" style="display:none">
+      <div class="results-grid" id="resultsGrid"></div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = 'http://localhost:5000';
+
+let imageB64 = null;
+let selectedMethod = 'sobel';
+
+// ── Upload ──
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const processBtn = document.getElementById('processBtn');
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) readFile(file);
+});
+
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+});
+
+function readFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    imageB64 = ev.target.result;
+    dropzone.querySelector('p').innerHTML = `<strong>${file.name}</strong><br/><span style="font-size:0.72rem;color:var(--accent)">Ready to process</span>`;
+    processBtn.disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Method selection ──
+document.querySelectorAll('.method-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.method-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedMethod = btn.dataset.method;
+  });
+});
+
+// ── Threshold slider ──
+const threshold = document.getElementById('threshold');
+threshold.addEventListener('input', () => {
+  document.getElementById('threshVal').textContent = threshold.value + '%';
+});
+
+// ── Demo ──
+document.getElementById('demoBtn').addEventListener('click', async () => {
+  try {
+    const res = await fetch(`${API}/api/demo`);
+    const data = await res.json();
+    imageB64 = data.image;
+    dropzone.querySelector('p').innerHTML = `<strong>demo_shapes.png</strong><br/><span style="font-size:0.72rem;color:var(--accent)">Demo image loaded</span>`;
+    processBtn.disabled = false;
+    showToast('Demo image loaded!', 'accent');
+  } catch {
+    showToast('Backend not running. Using synthetic demo.', 'warn');
+    // Generate a simple gradient demo image in-browser as fallback
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0,0,256,256);
+    ctx.fillStyle = '#ccc';
+    ctx.fillRect(60,60,80,80);
+    ctx.fillStyle = '#aaa';
+    ctx.beginPath(); ctx.arc(180,180,40,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(256,256); ctx.stroke();
+    imageB64 = canvas.toDataURL();
+    dropzone.querySelector('p').innerHTML = `<strong>demo_canvas.png</strong><br/><span style="font-size:0.72rem;color:var(--accent)">Canvas demo loaded</span>`;
+    processBtn.disabled = false;
+  }
+});
+
+// ── Process ──
+processBtn.addEventListener('click', async () => {
+  if (!imageB64) return;
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('loading').classList.add('show');
+
+  try {
+    const payload = {
+      image: imageB64,
+      method: selectedMethod === 'laplacian' ? 'sobel' : selectedMethod,
+      threshold: parseInt(threshold.value),
+      laplacian: document.getElementById('showLap').checked || selectedMethod === 'laplacian',
+    };
+
+    const res = await fetch(`${API}/api/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    renderResults(data);
+
+  } catch (err) {
+    document.getElementById('loading').classList.remove('show');
+    document.getElementById('placeholder').style.display = 'flex';
+    showToast('❌ Could not connect to backend. Run: python backend/app.py', 'error');
+    console.error(err);
+  }
+});
+
+function renderResults(data) {
+  document.getElementById('loading').classList.remove('show');
+
+  const cards = [
+    {
+      key: 'original', title: 'Original (Grayscale)',
+      formula: 'I(x,y)', color: '#6b7280',
+      desc: 'Input image converted to intensity values'
+    },
+    {
+      key: 'gradient_x', title: 'Horizontal Gradient Gx',
+      formula: '∂I/∂x', color: '#f76e6e',
+      desc: 'Rate of change along X axis — vertical edges'
+    },
+    {
+      key: 'gradient_y', title: 'Vertical Gradient Gy',
+      formula: '∂I/∂y', color: '#6e9ef7',
+      desc: 'Rate of change along Y axis — horizontal edges'
+    },
+    {
+      key: 'magnitude', title: 'Gradient Magnitude',
+      formula: '|∇I| = √(Gx²+Gy²)', color: '#6ef7c8',
+      desc: 'Combined edge strength — the core of edge detection'
+    },
+    {
+      key: 'direction_color', title: 'Gradient Direction (θ)',
+      formula: 'θ = arctan(Gy/Gx)', color: '#f7d36e',
+      desc: 'Color-coded edge direction — hue = angle'
+    },
+    {
+      key: 'edges', title: 'Binary Edge Map',
+      formula: `|∇I| ≥ P${data.stats ? Math.round(parseFloat(document.getElementById('threshold').value)) : 80}`, color: '#fff',
+      desc: 'Thresholded final edge detection output'
+    },
+  ];
+
+  if (data.laplacian) {
+    cards.push({
+      key: 'laplacian', title: 'Laplacian ∇²I',
+      formula: '∂²I/∂x² + ∂²I/∂y²', color: '#d36ef7',
+      desc: 'Second-order derivative — fine edge enhancement'
+    });
+  }
+
+  const grid = document.getElementById('resultsGrid');
+  grid.innerHTML = '';
+
+  cards.forEach(c => {
+    if (!data[c.key]) return;
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    card.innerHTML = `
+      <div class="card-header">
+        <span class="card-title">${c.title}</span>
+        <span class="card-formula" style="color:${c.color}">${c.formula}</span>
+      </div>
+      <div class="card-body">
+        <img src="data:image/png;base64,${data[c.key]}" alt="${c.title}" loading="lazy"/>
+      </div>
+      <div class="card-footer">${c.desc}</div>
+    `;
+    grid.appendChild(card);
+  });
+
+  document.getElementById('results').style.display = 'block';
+
+  // Stats
+  if (data.stats) {
+    const statsSection = document.getElementById('statsSection');
+    const statsGrid = document.getElementById('statsGrid');
+    statsSection.style.display = 'block';
+    const s = data.stats;
+    const stats = [
+      { val: s.mean_magnitude.toFixed(1), name: 'Mean |∇I|' },
+      { val: s.max_magnitude.toFixed(1), name: 'Max |∇I|' },
+      { val: s.mean_Gx.toFixed(1), name: 'Mean |Gx|' },
+      { val: s.mean_Gy.toFixed(1), name: 'Mean |Gy|' },
+      { val: s.edge_density_pct.toFixed(1) + '%', name: 'Edge Density' },
+      { val: s.dominant_direction_deg.toFixed(1) + '°', name: 'Dom. Direction' },
+    ];
+    statsGrid.innerHTML = stats.map(s => `
+      <div class="stat-card">
+        <div class="stat-val">${s.val}</div>
+        <div class="stat-name">${s.name}</div>
+      </div>
+    `).join('');
+  }
+}
+
+function showToast(msg, type='error') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = type === 'accent' ? '#1a7a5a' : type === 'warn' ? '#7a6a1a' : '#7a1a1a';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+</script>
+</body>
+</html>
